@@ -1,30 +1,32 @@
-import os
-import cv2
+import os, cv2
 import numpy as np
-import tensorflow as tf
-from object_detection.utils import label_map_util
-from matplotlib import pyplot as plt
-from object_detection.utils import visualization_utils as vis_util
 import time as delay
-from datetime import datetime
+import tensorflow as tf
 import threading as thread
+
+# E-mail MIME imports
+import yagmail
+
+from pathlib import Path
 from datetime import datetime
+from matplotlib import pyplot as plt
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as vis_util
+
 
 # Define the video stream.
 cap = cv2.VideoCapture(0)
 cap.set(3, 1280)
 cap.set(4, 720)
 
-#save path directory
-image_save_path = "C:/Users/me/Documents/SP Essentials/models/research/object_detection/avs_images"
-video_save_path = "C:/Users/me/Documents/SP Essentials/models/research/object_detection/avs_videos"
+# Save Directories
+image_save_path = "avs_images"
+video_save_path = "avs_videos"
 
 # Stream Check Variable
 istream = False
 hasrecorded = True
 count = 0
-
-# Video Variables
 
 # Path to frozen detection graph and label map.
 MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
@@ -35,6 +37,24 @@ PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
 # Leave this in case a need to scale or add detections in the future
 NUM_CLASSES = 1
 
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Startup functions, directories are checked/created upon running.
+if not os.path.isdir(video_save_path):
+    os.mkdir(video_save_path)
+
+if not os.path.isdir(image_save_path):
+    os.mkdir(image_save_path)
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#Variables for E-mail
+project_address = "avs.detector.notif@gmail.com"
+user_address = "ajsenar@gmail.com"
+password = "avspy4121"
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 # Load frozence inference model into memory
 detection_graph = tf.Graph()
 with detection_graph.as_default():
@@ -44,54 +64,80 @@ with detection_graph.as_default():
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
 
-
 # Load label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(
     label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
 
-
 # Load image helper function
 def load_image_into_numpy_array(image):
     (im_width, im_height) = image.size
     return np.array(image.getdata()).reshape(
         (im_height, im_width, 3)).astype(np.uint8)
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+# Performs Email Notification
+def mailer(name, timestamp):
+
+    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p")
+
+    msg = yagmail.SMTP(project_address, password)
+    msg.send(
+        to = user_address,
+        subject = "Alert!",
+        contents = "Intruder detected at " + stamp,
+        attachments = os.path.join(image_save_path, name)
+    )
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    #Insert delay for two seconds
-    #OR INSERT IF WHILE ON DELAY, THE BOX IS RENDERED TO ZERO, RESTART AGAIN
+
+# Performs the 2-sec. offset and recording functions in another thread.
 def offsetter():
-    global count, istream
-    hasrecorded = False
 
-    delay.sleep(5)
-    start = delay.time()
+    global count, istream   # Person counter variable, Stream checking variable
+    hasrecorded = False     # Checks if an image had already been recorded
 
-    dt = datetime.now()
-    datestamp = int(dt.strftime("%Y%m%d"))
-    timestamp = int(dt.strftime("%H%M%S"))
+    delay.sleep(2)          # 2-second offset
+    start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
 
+    dt = datetime.now()     # Gets exact date and time for naming records
+    datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
+    timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
+
+    # Video initialization functions
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     video = cv2.VideoWriter(os.path.join(video_save_path, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'), fourcc, 20.0, (1280, 720))
 
+    # Loop for recording
     while istream and (int(delay.time() - start) < 60):
 
+        # Frame getter
         return_value, image = cap.read()
         video.write(image)
 
+        # Image recorder
         if hasrecorded == False:
             count += 1
             print("Person " + str(count) + " found!")
-            filename = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-            cv2.imwrite(os.path.join(image_save_path, filename), image)
+            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+            cv2.imwrite(os.path.join(image_save_path, imgname), image)
             hasrecorded = True
 
+            notif = thread.Thread(target=mailer, args=(imgname, dt))
+            notif.start()
+
+    # Video finalizer
     video.release()
+
+
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+# Function that re-calls the offset thread whenever a detection has occured
 def countdown():
+
     global key, count, istream
+
+    # Thread initializers
     event = thread.Event()
     offset = thread.Thread(target=offsetter)
     offset.start()
@@ -144,6 +190,7 @@ with detection_graph.as_default():
             # Display output
             cv2.imshow('AVS', image_np)
 
+            # Detection checkers
             if np.count_nonzero(boxes) > 0:
                 if istream == False:
                     istream = True
@@ -155,4 +202,3 @@ with detection_graph.as_default():
                 istream = False
                 cv2.destroyAllWindows()
                 break
-
