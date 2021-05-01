@@ -1,11 +1,21 @@
+import sys
 import os, cv2
 import numpy as np
 import time as delay
 import tensorflow as tf
 import threading as thread
 
-# E-mail MIME imports
-import yagmail
+# User Prompt imports
+import socket
+import phonenumbers                         # Needs Installation
+from tkinter import *
+from validate_email import validate_email   # Needs Installation
+
+# E-mail import
+import yagmail                              # Needs Installation
+
+# Background Notification imports
+from plyer import notification              # Needs Installation
 
 from pathlib import Path
 from datetime import datetime
@@ -13,29 +23,20 @@ from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
 
-
-# Define the video stream.
-cap = cv2.VideoCapture(0)
-cap.set(3, 1280)
-cap.set(4, 720)
-
-# Save Directories
-image_save_path = "avs_images"
-video_save_path = "avs_videos"
-
 # Stream Check Variable
 istream = False
 hasrecorded = True
 count = 0
 
-# Path to frozen detection graph and label map.
-MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
-LABEL_MAP_NAME = 'mscoco_complete_label_map.pbtxt'
-PATH_TO_CKPT = os.path.join(os.curdir, 'frozen_models', MODEL_NAME)
-PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
+# Save Directories
+image_save_path = "avs_images"
+video_save_path = "avs_videos"
 
-# Leave this in case a need to scale or add detections in the future
-NUM_CLASSES = 1
+#Variables for E-mail and Phone
+project_address = "avs.detector.notif@gmail.com"
+password = "avspy4121"
+phone_number = ""
+email = ""
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -48,10 +49,166 @@ if not os.path.isdir(image_save_path):
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#Variables for E-mail
-project_address = "avs.detector.notif@gmail.com"
-user_address = "ajsenar@gmail.com"
-password = "avspy4121"
+def validate():
+    # Validates within another Thread
+    global prompt
+    prompt = thread.Thread(target = input)
+    prompt.daemon = True
+    prompt.start()
+
+def withdraw():
+    global error
+    error.destroy()
+
+def input():
+    # User Information
+    global ip, email, window, error, sms, phone_number
+    global waiting
+
+    # Wait Notification Window
+    wait = Toplevel()
+    wait.columnconfigure(0, weight=1)
+    wait.geometry("290x100")
+    wait.title("Validating")
+    wait.wm_resizable(width='False', height='False')
+    wait_label = Label(wait, text='Validating information, please wait...', font=('bold', 10), padx=30, pady=30)
+    wait_label.grid(row=0, column=0, sticky=W)
+    wait.deiconify()
+
+
+    # Fetch User Data
+    email = email_entry.get()
+    ip = ip_entry.get()
+
+    # Phone Number Validation (feat. Google's Phone Number Library)
+    try:
+        if phonenumbers.parse(sms_entry.get()):
+            sms = phonenumbers.parse(sms_entry.get())
+            valid_sms = phonenumbers.is_valid_number(sms)
+    except:
+            valid_sms = False
+
+    # Email Validation
+    valid_mail = validate_email(email_address=email, check_format=True, check_blacklist=True, check_dns=True,
+                                dns_timeout=10, check_smtp=True, smtp_timeout=10, smtp_helo_host='my.host.name',
+                                smtp_from_address='my@from.addr.ess', smtp_debug=False)
+
+    # IP Validation
+    try:
+        if socket.inet_aton(ip):
+            valid_ip = True
+    except:
+            valid_ip = False
+
+    # Checking All Info
+    if valid_mail and valid_ip and valid_sms:
+        phone_number = sms_entry.get() + "@sms.clicksend.com"
+        wait.destroy()
+        window.destroy()
+
+    elif not(valid_mail):
+
+        wait.destroy()
+
+        # Creates Error Window
+        error = Toplevel()
+        error.columnconfigure(0, weight=1)
+        error.geometry("150x100")
+        error.title("Error")
+        error.wm_resizable(width='False', height='False')
+
+        error_label = Label(error, text='Invalid Email Address!', font=('bold',10), padx=30, pady=10)
+        error_label.grid(row=0, column=0, sticky=W)
+        ok = Button(error, text='OK', width=12, command=withdraw)
+        ok.grid(row=1, column=0)
+        error.deiconify()
+
+    elif not(valid_ip):
+
+        wait.destroy()
+
+        # Creates Error Window
+        error = Toplevel()
+        error.columnconfigure(0, weight=1)
+        error.geometry("150x100")
+        error.title("Error")
+        error.wm_resizable(width='False', height='False')
+
+        error_label = Label(error, text='Invalid IP Address!', font=('bold', 10), padx=30, pady=10)
+        error_label.grid(row=0, column=0, sticky=W)
+        ok = Button(error, text='OK', width=12, command=withdraw)
+        ok.grid(row=1, column=0)
+        error.deiconify()
+
+    elif not(valid_sms):
+
+        wait.destroy()
+
+        # Creates Error Window
+        error = Toplevel()
+        error.columnconfigure(0, weight=1)
+        error.geometry("150x100")
+        error.title("Error")
+        error.wm_resizable(width='False', height='False')
+
+        error_label = Label(error, text='Invalid SMS number!', font=('bold', 10), padx=30, pady=10)
+        error_label.grid(row=0, column=0, sticky=W)
+        ok = Button(error, text='OK', width=12, command=withdraw)
+        ok.grid(row=1, column=0)
+        error.deiconify()
+
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# GUI: User Prompt
+window = Tk()
+
+# Window Appearance
+window.title("Intruder Detection Application Prompt")
+window.geometry('260x225')
+window.wm_resizable(width='False', height='False')
+
+# Email Widgets
+email_label = Label(window, text='Email Address', font=('bold',10), padx=10, pady=20)
+email_label.grid(row=0, column=1, sticky=W)
+email_entry = Entry(window)
+email_entry.grid(row=0, column=2)
+
+# IP Widgets
+ip_label = Label(window, text='IP Address', font=('bold',10), padx= 10, pady=20)
+ip_label.grid(row=1, column=1, sticky=W)
+ip_entry = Entry(window)
+ip_entry.grid(row=1, column=2)
+
+# SMS Widgets
+country_code = StringVar()
+sms_label = Label(window, text='Phone Number', font=('bold',10), padx= 10, pady=20)
+sms_label.grid(row=2, column=1, sticky=W)
+sms_entry = Entry(window, textvariable = country_code)
+sms_entry.insert(0, "+63")
+sms_entry.grid(row=2, column=2)
+
+# Button
+enter = Button(window, text='Confirm', width=12, command=validate)
+enter.grid(row=3, column=2)
+
+window.mainloop()
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Define the video stream.
+cap = cv2.VideoCapture(0)
+cap.set(3, 1280)
+cap.set(4, 720)
+
+# Path to frozen detection graph and label map.
+MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
+LABEL_MAP_NAME = 'mscoco_complete_label_map.pbtxt'
+PATH_TO_CKPT = os.path.join(os.curdir, 'frozen_models', MODEL_NAME)
+PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
+
+# Leave this in case a need to scale or add detections in the future
+NUM_CLASSES = 1
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -80,21 +237,27 @@ def load_image_into_numpy_array(image):
 # Performs Email Notification
 def mailer(name, timestamp):
 
-    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p")
+    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
 
     msg = yagmail.SMTP(project_address, password)
-    msg.send(
-        to = user_address,
+    msg.send(                                           # Mail to User Address
+        to = email,
         subject = "Alert!",
         contents = "Intruder detected at " + stamp,
         attachments = os.path.join(image_save_path, name)
     )
+    msg.send(                                           # Routing Message to SMS thru Email
+        to=phone_number,
+        subject="Alert!",
+        contents="Intruder detected at " + stamp)
+
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs the 2-sec. offset and recording functions in another thread.
 def offsetter():
 
     global count, istream   # Person counter variable, Stream checking variable
+    global notif
     hasrecorded = False     # Checks if an image had already been recorded
 
     delay.sleep(2)          # 2-second offset
@@ -111,22 +274,31 @@ def offsetter():
     # Loop for recording
     while istream and (int(delay.time() - start) < 60):
 
-        # Frame getter
+        # Frame Fetcher
         return_value, image = cap.read()
         video.write(image)
 
-        # Image recorder
+        # Image Recorder
         if hasrecorded == False:
             count += 1
-            print("Person " + str(count) + " found!")
+
+            #Background Notification
+            notification.notify(
+                title = "DETECTION",
+                message = str(count) + " Person(s) Found!",
+                app_icon = "avs_icon.ico"
+            )
+
             imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
             cv2.imwrite(os.path.join(image_save_path, imgname), image)
             hasrecorded = True
 
             notif = thread.Thread(target=mailer, args=(imgname, dt))
+            notif.daemon = True
             notif.start()
 
-    # Video finalizer
+    # Video Finalizer
+    notif.join()
     video.release()
 
 
@@ -134,12 +306,12 @@ def offsetter():
 
 # Function that re-calls the offset thread whenever a detection has occured
 def countdown():
-
-    global key, count, istream
+    global key, count, istream, offset
 
     # Thread initializers
     event = thread.Event()
     offset = thread.Thread(target=offsetter)
+    offset.daemon = True
     offset.start()
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -202,3 +374,6 @@ with detection_graph.as_default():
                 istream = False
                 cv2.destroyAllWindows()
                 break
+
+# Kills all DAEMon-Flagged Threads
+sys.exit()
