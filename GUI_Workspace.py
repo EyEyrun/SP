@@ -6,12 +6,17 @@ import threading as thread
 import socket
 import phonenumbers                         # Needs Installation
 from tkinter import *
+from tkinter import messagebox
 from validate_email import validate_email   # Needs Installation
 
 # E-mail import
 import yagmail                              # Needs Installation
 
 from pathlib import Path
+
+from user_db import Database
+
+db = Database('users_log.db')
 
 def validate():
     # Validates within another Thread
@@ -20,15 +25,11 @@ def validate():
     prompt.daemon = True
     prompt.start()
 
-def withdraw():
-    global error
-
-    error.destroy()
-
 def disable():
     global is_custom
 
     is_custom = False
+    vid_entry.delete(0, END)
     vid_entry.insert(0, "C:/Users/Public/Videos/avs_videos")
     vid_entry.configure(state=DISABLED)
 
@@ -36,10 +37,28 @@ def switch2():
     log.withdraw()
     window.deiconify()
 
+def logger():
+
+    global email, ip, sms, directory
+    user_info = db.login(user_entry.get(), pass_entry.get())
+
+    if user_info == None:
+        messagebox.showerror(title="Invalid input!", message="No User Found.")
+
+    else:
+        messagebox.showinfo(message="Login Successful!")
+        email = user_info[1]
+        ip = user_info[3]
+        sms = user_info[4]
+        directory = user_info[5]
+        print(email+" "+ip+" "+sms+" "+directory)
+        log.destroy()
+        window.destroy()
+
 def switch():
     window.withdraw()
 
-    global log
+    global log, user_entry, pass_entry
     log = Toplevel()
 
     # Window Appearance
@@ -57,7 +76,7 @@ def switch():
     pass_entry = Entry(log)
     pass_entry.grid(row=1, column=2, sticky=W)
 
-    confirm = Button(log, text='Confirm', width=12, command=switch)
+    confirm = Button(log, text='Confirm', width=12, command=logger)
     confirm.grid(row=2, column=2, padx=15)
 
     back = Button(log, text='Back', width=12, command=switch2)
@@ -68,7 +87,7 @@ def input():
     global ip, email, window, error, sms, phone_number, is_custom
     global waiting
 
-    # Wait Notification Window
+        # Wait Notification Window
     wait = Toplevel()
     wait.columnconfigure(0, weight=1)
     wait.geometry("290x100")
@@ -82,6 +101,9 @@ def input():
     email = email_entry.get()
     ip = ip_entry.get()
     password = password_entry.get()
+    directory = vid_entry.get()
+    number = sms_entry.get()
+
 
     # Email Validation
     valid_mail = validate_email(email_address=email, check_format=True, check_blacklist=True, check_dns=True,
@@ -112,103 +134,61 @@ def input():
 
 
     # Error Messages
-    if is_custom:
+    if not db.verify(email) == None:
 
-      if not os.path.isdir(vid_entry.get()):
+        messagebox.showerror(message="Email Already Registered!")
+
+    elif not os.path.isdir(directory):
+
+        if is_custom:
 
           wait.destroy()
 
           # Creates Error Window
-          error = Toplevel()
-          error.columnconfigure(0, weight=1)
-          error.geometry("150x100")
-          error.title("Error")
-          error.wm_resizable(width='False', height='False')
+          messagebox.showerror(message="Directory does not Exist!")
 
-          error_label = Label(error, text='Invalid Directory!', font=('bold', 10), padx=30, pady=10)
-          error_label.grid(row=0, column=0, sticky=W)
-          ok = Button(error, text='OK', width=12, command=withdraw)
-          ok.grid(row=1, column=0)
-          error.deiconify()
-
-    elif not valid_pass:
-
-        wait.destroy()
-
-        # Creates Error Window
-        error = Toplevel()
-        error.columnconfigure(0, weight=1)
-        error.geometry("310x110")
-        error.title("Error")
-        error.wm_resizable(width='False', height='False')
-
-        error_label = Label(error, text='Password must be 8 to 20 characters long\n and '
-                                        'should only contain letters and numbers!', font=('bold',10), padx=30, pady=15)
-        error_label.grid(row=0, column=0, sticky=W)
-        ok = Button(error, text='OK', width=12, command=withdraw)
-        ok.grid(row=1, column=0)
-        error.deiconify()
-
+        else:
+            os.mkdir(vid_entry.get())
 
     elif not valid_mail:
 
         wait.destroy()
 
         # Creates Error Window
-        error = Toplevel()
-        error.columnconfigure(0, weight=1)
-        error.geometry("150x100")
-        error.title("Error")
-        error.wm_resizable(width='False', height='False')
+        messagebox.showerror(message="Invalid Email Address!")
 
-        error_label = Label(error, text='Invalid Email Address!', font=('bold',10), padx=30, pady=10)
-        error_label.grid(row=0, column=0, sticky=W)
-        ok = Button(error, text='OK', width=12, command=withdraw)
-        ok.grid(row=1, column=0)
-        error.deiconify()
+    elif not valid_pass:
+
+        wait.destroy()
+
+        # Creates Error Window
+        messagebox.showerror(message='Password must be 8 to 20 characters long and should\n '
+                                        'only contain at least one (1) digit and both letter cases!')
 
     elif not valid_ip:
 
         wait.destroy()
 
         # Creates Error Window
-        error = Toplevel()
-        error.columnconfigure(0, weight=1)
-        error.geometry("150x100")
-        error.title("Error")
-        error.wm_resizable(width='False', height='False')
-
-        error_label = Label(error, text='Invalid IP Address!', font=('bold', 10), padx=30, pady=10)
-        error_label.grid(row=0, column=0, sticky=W)
-        ok = Button(error, text='OK', width=12, command=withdraw)
-        ok.grid(row=1, column=0)
-        error.deiconify()
+        messagebox.showerror(message="Invalid IP Address!")
 
     elif not valid_sms:
 
         wait.destroy()
 
         # Creates Error Window
-        error = Toplevel()
-        error.columnconfigure(0, weight=1)
-        error.geometry("150x100")
-        error.title("Error")
-        error.wm_resizable(width='False', height='False')
-
-        error_label = Label(error, text='Invalid SMS number!', font=('bold', 10), padx=30, pady=10)
-        error_label.grid(row=0, column=0, sticky=W)
-        ok = Button(error, text='OK', width=12, command=withdraw)
-        ok.grid(row=1, column=0)
-        error.deiconify()
+        messagebox.showerror(message="Invalid SMS Number!")
 
     else:
-
-        if not os.path.isdir(vid_entry.get()):
-            os.mkdir(vid_entry.get())
-
+        db.signup(email, password, ip, number, directory)
         phone_number = sms_entry.get() + "@sms.clicksend.com"
+        try:
+            log.destroy()
+        except:
+            wait.destroy()
+            window.destroy()
         wait.destroy()
-        window.wm_withdraw()
+        window.destroy()
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -262,3 +242,5 @@ login = Button(window, text='Login', width=12, command=switch)
 login.grid(row=6, column=1)
 
 window.mainloop()
+
+sys.exit()
