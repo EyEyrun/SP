@@ -6,7 +6,7 @@ class Database:
         self.conn = sqlite3.connect(login)
         self.cur = self.conn.cursor()
         self.cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email text,"
-                         "password text, ip text, sms text, directory text)")
+                         "password text, sms text, video_directory text, image_directory)")
         self.conn.commit()
 
     def verify(self, email):
@@ -14,9 +14,9 @@ class Database:
         rows = self.cur.fetchone()
         return rows
 
-    def signup(self, email, password, ip, sms, directory):
+    def signup(self, email, password, sms, video_directory, image_directory):
         self.cur.execute("INSERT INTO users VALUES (NULL, ?, ?, ?, ?, ?)",
-                         (email, password, ip, sms, directory))
+                         (email, password, sms, video_directory, image_directory))
         self.conn.commit()
 
     def login(self, email, password):
