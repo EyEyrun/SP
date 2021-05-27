@@ -1,9 +1,10 @@
 import sys
 import os, cv2
+import pyautogui
 import numpy as np
 import time as delay
 import tensorflow as tf
-import threading as thread
+from multiprocessing import Process
 
 # User Prompt imports
 import socket
@@ -41,6 +42,8 @@ directory = ""
 phone_number = ""
 image_save_path = ""
 
+screen_size = pyautogui.size()
+
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 from user_db import Database
@@ -58,6 +61,7 @@ def disable():
 def switch2():
     log.withdraw()
     window.deiconify()
+
 
 def logger():
 
@@ -104,10 +108,12 @@ def switch():
     back = Button(log, text='Back', width=12, command=switch2)
     back.grid(row=2, column=1, padx=15)
 
+    log.iconbitmap("avs_icon.ico")
+
 def input():
     # User Information
     global email, window, error, sms, phone_number, directory, image_save_path, is_custom
-    global wait
+    global wait, test
 
     # Fetch User Data
     email = email_entry.get()
@@ -229,10 +235,15 @@ sign_up.grid(row=5, column=2)
 login = Button(window, text='Login', width=12, command=switch)
 login.grid(row=5, column=1)
 
+
+window.iconbitmap("avs_icon.ico")
 window.mainloop()
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+icon = cv2.imread("AVS Show.jpg")
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Path to frozen detection graph and label map.
 MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
@@ -279,10 +290,6 @@ def mailer(name, timestamp):
         contents = "Intruder detected at " + stamp,
         attachments = os.path.join(image_save_path, name)
     )
-    msg.send(                                           # Routing Message to SMS thru Email
-        to=phone_number,
-        subject="Alert!",
-        contents="Intruder detected at " + stamp)
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -291,6 +298,7 @@ def offsetter():
 
     global count, istream   # Person counter variable, Stream checking variable
     global notif
+
     hasrecorded = False     # Checks if an image had already been recorded
 
     delay.sleep(2)          # 2-second offset
@@ -302,14 +310,16 @@ def offsetter():
     timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
 
     # Video initialization functions
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'), fourcc, 20.0, (1280, 720))
+    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, screen_size)
 
     # Loop for recording
     while istream and (int(delay.time() - start) < 60):
 
         # Frame Fetcher
-        image = cv2.cvtColor(np.array(ImageGrab.grab(bbox=(0, 43, 1366, 686))), cv2.COLOR_BGR2RGB)
+        frame = pyautogui.screenshot()
+        image = np.array(frame)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         video.write(image)
 
         # Image Recorder
@@ -320,7 +330,8 @@ def offsetter():
             cv2.imwrite(os.path.join(image_save_path, imgname), image)
             hasrecorded = True
 
-            notif = thread.Thread(target=mailer, args=(imgname, dt))
+
+            notif = Process(target=mailer, args=(imgname, dt))
             notif.daemon = True
             notif.start()
 
@@ -336,8 +347,7 @@ def countdown():
     global key, count, istream, offset
 
     # Thread initializers
-    event = thread.Event()
-    offset = thread.Thread(target=offsetter)
+    offset = Process(target=offsetter)
     offset.daemon = True
     offset.start()
 
@@ -395,7 +405,8 @@ with detection_graph.as_default():
             else:
                 istream = False
 
-            if cv2.waitKey(25) & 0xFF == ord('q'):
+            cv2.imshow("(Minimize Me) Press Q to Exit", icon)
+            if cv2.waitKey(1) == ord("q"):
                 istream = False
                 break
 
