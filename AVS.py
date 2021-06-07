@@ -4,7 +4,7 @@ import pyautogui
 import numpy as np
 import time as delay
 import tensorflow as tf
-from multiprocessing import Process
+from threading import Thread
 
 # User Prompt imports
 import socket
@@ -26,29 +26,11 @@ from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
 
-# Stream Check Variable
-istream = False
-hasrecorded = True
-count = 0
-
-logged = True
-
-#Variables for E-mail and Phone
-project_address = "avs.detector.notif@gmail.com"
-password = "avspy4121"
-
-email = ""
-directory = ""
-phone_number = ""
-image_save_path = ""
-
-screen_size = pyautogui.size()
+from user_db import Database
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-from user_db import Database
-
-db = Database('users_log.db')
+#Functions for GUI
 
 def disable():
     global is_custom
@@ -62,7 +44,6 @@ def switch2():
     log.withdraw()
     window.deiconify()
 
-
 def logger():
 
     global email, sms, directory, image_save_path
@@ -72,12 +53,12 @@ def logger():
         messagebox.showerror(title="Invalid input!", message="No User Found.")
 
     else:
-        messagebox.showinfo(message="Login Successful!")
+
         email = user_info[1]
         sms = user_info[3]
         directory = user_info[4]
         image_save_path = user_info[5]
-        print(email+" "+" "+sms+" "+directory+" "+image_save_path)
+
         log.destroy()
         window.destroy()
 
@@ -111,6 +92,7 @@ def switch():
     log.iconbitmap("avs_icon.ico")
 
 def input():
+
     # User Information
     global email, window, error, sms, phone_number, directory, image_save_path, is_custom
     global wait, test
@@ -121,7 +103,6 @@ def input():
     directory = vid_entry.get()
     image_save_path = vid_entry.get() + "/recorded_images"
     number = sms_entry.get()
-
 
     # Email Validation
     valid_mail = validate_email(email_address=email, check_format=True, check_blacklist=True, check_dns=True,
@@ -148,7 +129,6 @@ def input():
 
         messagebox.showerror(message="Email Already Registered!")
 
-
     elif not os.path.isdir(directory):
 
         if is_custom:
@@ -158,21 +138,16 @@ def input():
           # Creates Error Window
           messagebox.showerror(message="Directory does not Exist!")
 
-
         else:
             os.mkdir(directory)
             os.mkdir(image_save_path)
 
-
     elif not valid_mail:
-
 
         # Creates Error Window
         messagebox.showerror(message="Invalid Email Address!")
 
-
     elif not valid_pass:
-
 
         # Creates Error Window
         messagebox.showerror(message='Password must be 8 to 20 characters long and should\n '
@@ -183,12 +158,120 @@ def input():
         # Creates Error Window
         messagebox.showerror(message="Invalid SMS Number!")
 
-
     else:
         db.signup(email, password, number, directory, image_save_path)
         phone_number = sms_entry.get() + "@sms.clicksend.com"
         messagebox.showinfo(title="Success!", message="Successfully Registered!")
         window.destroy()
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Function that recalls the offset thread whenever a detection has occurred
+def countdown():
+    global key, count, istream, offset
+
+    # Thread initializers
+
+    offset = Thread(target=offsetter)
+    offset.daemon = True
+    offset.start()
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Performs the 2-sec. offset and recording functions in another thread.
+def offsetter():
+
+    global count, istream   # Person counter variable, Stream checking variable
+    global notif
+
+    hasrecorded = False     # Checks if an image had already been recorded
+
+    delay.sleep(2)          # 2-second offset
+
+    start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
+
+    dt = datetime.now()     # Gets exact date and time for naming records
+    datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
+    timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
+
+    # Video initialization functions
+    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, screen_size)
+
+    # Loop for recording
+    while istream and (int(delay.time() - start) < 60):
+
+        # Frame Fetcher
+        frame = pyautogui.screenshot()
+        image = np.array(frame)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        video.write(image)
+
+        # Image Recorder
+        if hasrecorded == False:
+            count += 1
+
+            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+            cv2.imwrite(os.path.join(image_save_path, imgname), image)
+            hasrecorded = True
+
+
+            notif = Thread(target=mailer, args=(imgname, dt))
+            notif.daemon = True
+            notif.start()
+
+    # Video Finalizer
+    video.release()
+
+    delay.sleep(3)
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Performs Email Notification
+def mailer(name, timestamp):
+
+    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
+
+    msg = yagmail.SMTP(project_address, password)
+    msg.send(                                           # Mail to User Address
+        to = email,
+        subject = "Alert!",
+        contents = "Intruder detected at " + stamp,
+        attachments = os.path.join(image_save_path, name)
+    )
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Load image helper function
+def load_image_into_numpy_array(image):
+    (im_width, im_height) = image.size
+    return np.array(image.getdata()).reshape(
+        (im_height, im_width, 3)).astype(np.uint8)
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Stream Check Variable
+istream = False
+hasrecorded = True
+count = 0
+
+#Variables for E-mail and Phone
+project_address = "avs.detector.notif@gmail.com"
+password = "avspy4121"
+
+email = ""
+directory = ""
+phone_number = ""
+image_save_path = ""
+
+# Set screen size for Screen Recording
+screen_size = pyautogui.size()
+
+# Create Database if it does not already Exist
+db = Database('users_log.db')
+
+# Set Display for turning off Program
+icon = cv2.imread("AVS Show.jpg")
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -235,13 +318,8 @@ sign_up.grid(row=5, column=2)
 login = Button(window, text='Login', width=12, command=switch)
 login.grid(row=5, column=1)
 
-
 window.iconbitmap("avs_icon.ico")
 window.mainloop()
-
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-icon = cv2.imread("AVS Show.jpg")
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -270,88 +348,6 @@ label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(
     label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
-
-# Load image helper function
-def load_image_into_numpy_array(image):
-    (im_width, im_height) = image.size
-    return np.array(image.getdata()).reshape(
-        (im_height, im_width, 3)).astype(np.uint8)
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Performs Email Notification
-def mailer(name, timestamp):
-
-    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
-
-    msg = yagmail.SMTP(project_address, password)
-    msg.send(                                           # Mail to User Address
-        to = email,
-        subject = "Alert!",
-        contents = "Intruder detected at " + stamp,
-        attachments = os.path.join(image_save_path, name)
-    )
-
-#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Performs the 2-sec. offset and recording functions in another thread.
-def offsetter():
-
-    global count, istream   # Person counter variable, Stream checking variable
-    global notif
-
-    hasrecorded = False     # Checks if an image had already been recorded
-
-    delay.sleep(2)          # 2-second offset
-
-    start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
-
-    dt = datetime.now()     # Gets exact date and time for naming records
-    datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
-    timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
-
-    # Video initialization functions
-    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, screen_size)
-
-    # Loop for recording
-    while istream and (int(delay.time() - start) < 60):
-
-        # Frame Fetcher
-        frame = pyautogui.screenshot()
-        image = np.array(frame)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        video.write(image)
-
-        # Image Recorder
-        if hasrecorded == False:
-            count += 1
-
-            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-            cv2.imwrite(os.path.join(image_save_path, imgname), image)
-            hasrecorded = True
-
-
-            notif = Process(target=mailer, args=(imgname, dt))
-            notif.daemon = True
-            notif.start()
-
-    # Video Finalizer
-    video.release()
-
-    delay.sleep(3)
-
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Function that re-calls the offset thread whenever a detection has occured
-def countdown():
-    global key, count, istream, offset
-
-    # Thread initializers
-    offset = Process(target=offsetter)
-    offset.daemon = True
-    offset.start()
-
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Detection loop
 with detection_graph.as_default():
@@ -397,6 +393,8 @@ with detection_graph.as_default():
                 use_normalized_coordinates=True,
                 line_thickness=8)
 
+            cv2.imshow("(Minimize Me) Press Q to Exit", icon)
+
             # Detection checkers
             if np.count_nonzero(boxes) > 0:
                 if istream == False:
@@ -405,8 +403,8 @@ with detection_graph.as_default():
             else:
                 istream = False
 
-            cv2.imshow("(Minimize Me) Press Q to Exit", icon)
             if cv2.waitKey(1) == ord("q"):
+                cv2.destroyAllWindows()
                 istream = False
                 break
 
