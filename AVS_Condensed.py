@@ -60,7 +60,7 @@ def offsetter():
 
     # Video initialization functions
     video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'DIVX'), 15.0, screen_size)
+                            cv2.VideoWriter_fourcc(*'DIVX'), 30.0, screen_size)
 
 
     # Loop for recording
@@ -78,15 +78,17 @@ def offsetter():
 
             imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
             cv2.imwrite(os.path.join(image_save_path, imgname), image)
+
             hasrecorded = True
+
+            notification.notify(
+                title="DETECTION TEST",
+                message=str(count) + " Detection(s) so Far!",
+                app_icon="avs_icon.ico"
+            )
 
     video.release()
 
-    notification.notify(
-        title="DETECTION TEST",
-        message=str(count) + " Detection(s) so Far!",
-        app_icon="avs_icon.ico"
-    )
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
