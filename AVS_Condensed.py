@@ -21,10 +21,7 @@ from object_detection.utils import visualization_utils as vis_util
 # Function that recalls the offset thread whenever a detection has occurred
 def countdown():
 
-    global key, count, istream, offset
-
     # Thread initializers
-
     offset = Thread(target=offsetter)
     offset.daemon = True
     offset.start()
@@ -40,7 +37,6 @@ def buffer():
 def permit():
 
     global permit_detect
-
     delay.sleep(3)
     permit_detect = True
 
@@ -50,10 +46,9 @@ def permit():
 def offsetter():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif, permit_detect
+    global notif
 
     hasrecorded = False     # Checks if an image had already been recorded
-    permit_detect = False
 
     delay.sleep(2)          # 2-second offset
 
@@ -72,8 +67,7 @@ def offsetter():
     while istream and (int(delay.time() - start) < 60):
 
         # Frame Fetcher
-        frame = pyautogui.screenshot()
-        image = np.array(frame)
+        image = np.array(pyautogui.screenshot())
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         video.write(image)
 
@@ -87,7 +81,6 @@ def offsetter():
             hasrecorded = True
 
     video.release()
-    delay.sleep(3)
 
     notification.notify(
         title="DETECTION TEST",
@@ -200,8 +193,9 @@ with detection_graph.as_default():
             cv2.imshow("(Minimize Me) Press Q to Exit", icon)
 
             # Detection checkers
-            if np.count_nonzero(boxes) > 0 and permit_detect:
-                if istream == False:
+            if np.count_nonzero(boxes) > 0:
+                if istream == False and permit_detect:
+                    permit_detect = False
                     istream = True
                     countdown()
             else:
