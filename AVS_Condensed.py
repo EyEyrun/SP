@@ -29,15 +29,31 @@ def countdown():
     offset.daemon = True
     offset.start()
 
+def buffer():
+
+    allow = Thread(target=permit)
+    allow.daemon = True
+    allow.start()
+
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+def permit():
+
+    global permit_detect
+
+    delay.sleep(3)
+    permit_detect = True
+
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs the 2-sec. offset and recording functions in another thread.
 def offsetter():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif
+    global notif, permit_detect
 
     hasrecorded = False     # Checks if an image had already been recorded
+    permit_detect = False
 
     delay.sleep(2)          # 2-second offset
 
@@ -47,6 +63,11 @@ def offsetter():
     datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
     timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
 
+    # Video initialization functions
+    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+                            cv2.VideoWriter_fourcc(*'DIVX'), 15.0, screen_size)
+
+
     # Loop for recording
     while istream and (int(delay.time() - start) < 60):
 
@@ -54,6 +75,7 @@ def offsetter():
         frame = pyautogui.screenshot()
         image = np.array(frame)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        video.write(image)
 
         # Image Recorder
         if hasrecorded == False:
@@ -64,13 +86,14 @@ def offsetter():
             cv2.imwrite(os.path.join(image_save_path, imgname), image)
             hasrecorded = True
 
-        notification.notify(
-            title="DETECTION TEST",
-            message=str(count) + " Detection(s) so Far!",
-            app_icon="avs_icon.ico"
-        )
-
+    video.release()
     delay.sleep(3)
+
+    notification.notify(
+        title="DETECTION TEST",
+        message=str(count) + " Detection(s) so Far!",
+        app_icon="avs_icon.ico"
+    )
 
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -86,11 +109,15 @@ def load_image_into_numpy_array(image):
 istream = False
 hasrecorded = True
 count = 0
+permit_detect = True
 
 image_save_path = "C:/Users/Public/Pictures/SP_Testing"
+directory = "C:/Users/Public/Videos/SP_Vid_Testing"
 
-if not os.isdir(image_save_path):
+if not os.path.isdir(image_save_path):
     os.mkdir(image_save_path)
+if not os.path.isdir(directory):
+    os.mkdir(directory)
 
 # Set screen size for Screen Recording
 screen_size = pyautogui.size()
@@ -173,12 +200,14 @@ with detection_graph.as_default():
             cv2.imshow("(Minimize Me) Press Q to Exit", icon)
 
             # Detection checkers
-            if np.count_nonzero(boxes) > 0:
+            if np.count_nonzero(boxes) > 0 and permit_detect:
                 if istream == False:
                     istream = True
                     countdown()
             else:
                 istream = False
+                if permit_detect == False:
+                    buffer()
 
             if cv2.waitKey(1) == ord("q"):
                 cv2.destroyAllWindows()
