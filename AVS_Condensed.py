@@ -1,109 +1,25 @@
+import os
+import cv2
 import sys
-import os, cv2
-import pyautogui
 import numpy as np
-import time as delay
 import tensorflow as tf
-from threading import Thread
-
-# Background Notification imports
-from plyer import notification              # Needs Installation
-
-from pathlib import Path
 from PIL import ImageGrab
-from datetime import datetime
 from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
 
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+import time as delay
+from multiprocessing import Process
+from threading import Thread
+from plyer import notification
+from datetime import datetime
 
-# Function that recalls the offset thread whenever a detection has occurred
-def countdown():
+cap = cv2.VideoCapture(1)
+cap.set(3, 1280)
+cap.set(4, 720)
 
-    # Thread initializers
-    offset = Thread(target=offsetter)
-    offset.daemon = True
-    offset.start()
-
-def buffer():
-
-    allow = Thread(target=permit)
-    allow.daemon = True
-    allow.start()
-
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-def permit():
-
-    global permit_detect
-    delay.sleep(3)
-    permit_detect = True
-
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Performs the 2-sec. offset and recording functions in another thread.
-def offsetter():
-
-    global count, istream   # Person counter variable, Stream checking variable
-    global notif
-
-    hasrecorded = False     # Checks if an image had already been recorded
-
-    delay.sleep(2)          # 2-second offset
-
-    start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
-
-    dt = datetime.now()     # Gets exact date and time for naming records
-    datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
-    timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
-
-    # Video initialization functions
-    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'DIVX'), 30.0, screen_size)
-
-
-    # Loop for recording
-    while istream and (int(delay.time() - start) < 60):
-
-        # Frame Fetcher
-        image = np.array(pyautogui.screenshot())
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        video.write(image)
-
-        # Image Recorder
-        if hasrecorded == False:
-
-            count += 1
-
-            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-            cv2.imwrite(os.path.join(image_save_path, imgname), image)
-
-            hasrecorded = True
-
-            notification.notify(
-                title="DETECTION TEST",
-                message=str(count) + " Detection(s) so Far!",
-                app_icon="avs_icon.ico"
-            )
-
-    video.release()
-
-
-#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Load image helper function
-def load_image_into_numpy_array(image):
-    (im_width, im_height) = image.size
-    return np.array(image.getdata()).reshape(
-        (im_height, im_width, 3)).astype(np.uint8)
-
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Stream Check Variable
-istream = False
-hasrecorded = True
 count = 0
+istream = False
 permit_detect = True
 
 image_save_path = "C:/Users/Public/Pictures/SP_Testing"
@@ -114,14 +30,6 @@ if not os.path.isdir(image_save_path):
 if not os.path.isdir(directory):
     os.mkdir(directory)
 
-# Set screen size for Screen Recording
-screen_size = pyautogui.size()
-
-# Set Display for turning off Program
-icon = cv2.imread("AVS Show.jpg")
-
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 # Path to frozen detection graph and label map.
 MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
 LABEL_MAP_NAME = 'mscoco_complete_label_map.pbtxt'
@@ -130,8 +38,6 @@ PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
 
 # Leave this in case a need to scale or add detections in the future
 NUM_CLASSES = 1
-
-#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Load frozence inference model into memory
 detection_graph = tf.Graph()
@@ -142,19 +48,87 @@ with detection_graph.as_default():
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
 
+
 # Load label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(
     label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
 
+
+# Load image helper function
+def load_image_into_numpy_array(image):
+    (im_width, im_height) = image.size
+    return np.array(image.getdata()).reshape(
+        (im_height, im_width, 3)).astype(np.uint8)
+
+def permit():
+
+    global permit_detect
+    delay.sleep(3)
+    permit_detect = True
+
+
+def offsetter():
+    global count, istream  # Person counter variable, Stream checking variable
+    global notif
+
+    hasrecorded = False  # Checks if an image had already been recorded
+
+    delay.sleep(2)  # 2-second offset
+
+    start = delay.time()  # Benchmarks with timestamp for the 60-sec. recording
+
+    dt = datetime.now()  # Gets exact date and time for naming records
+    datestamp = int(dt.strftime("%Y%m%d"))  # Naming (Date)
+    timestamp = int(dt.strftime("%H%M%S"))  # Naming (Time)
+
+    # Video initialization functions
+    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+                            cv2.VideoWriter_fourcc(*'DIVX'), 30.0, (1280, 720))
+
+    # Loop for recording
+    while istream and (int(delay.time() - start) < 60):
+
+        # Frame Fetcher
+        ret, image = cap.read()
+        video.write(image)
+
+        # Image Recorder
+        if hasrecorded == False:
+            count += 1
+
+            notification.notify(
+                title="DETECTION TEST",
+                message=str(count) + " Detection(s) so Far!",
+                app_icon="avs_icon.ico"
+            )
+
+            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+            cv2.imwrite(os.path.join(image_save_path, imgname), image)
+
+            hasrecorded = True
+
+    video.release()
+
+def countdown():
+
+    offset = Thread(target=offsetter)
+    offset.daemon = True
+    offset.start()
+
+def buffer():
+
+    allow = Thread(target=permit)
+    allow.daemon = True
+    allow.start()
+
 # Detection loop
 with detection_graph.as_default():
     with tf.compat.v1.Session(graph=detection_graph) as sess:
         while True:
             # Read frame from camera
-            img = ImageGrab.grab(bbox=(0, 43, 1366, 686))
-            image_np = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+            ret, image_np = cap.retrieve(cap.grab())
             # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
             image_np_expanded = np.expand_dims(image_np, axis=0)
             # Extract image tensor
@@ -192,12 +166,12 @@ with detection_graph.as_default():
                 use_normalized_coordinates=True,
                 line_thickness=8)
 
-            cv2.imshow("(Minimize Me) Press Q to Exit", icon)
+            # Display output
+            cv2.imshow('AVS', image_np)
 
             # Detection checkers
             if np.count_nonzero(boxes) > 0:
                 if istream == False and permit_detect:
-                    permit_detect = False
                     istream = True
                     countdown()
             else:
@@ -205,17 +179,9 @@ with detection_graph.as_default():
                 if permit_detect == False:
                     buffer()
 
-            if cv2.waitKey(1) == ord("q"):
-                cv2.destroyAllWindows()
+            if cv2.waitKey(25) & 0xFF == ord('q'):
                 istream = False
+                cv2.destroyAllWindows()
                 break
 
-#Background Notification
-notification.notify(
-            title = "DETECTION REPORT",
-            message = "A Total of " + str(count) + " Detections Made!",
-            app_icon = "avs_icon.ico"
-            )
-
-# Kills all DAEMon-Flagged Threads
 sys.exit()
