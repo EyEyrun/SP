@@ -9,8 +9,10 @@ from threading import Thread
 # User Prompt imports
 import socket
 import phonenumbers                         # Needs Installation
+
 from tkinter import *
 from tkinter import messagebox
+
 from validate_email import validate_email   # Needs Installation
 
 # E-mail import
@@ -20,11 +22,12 @@ import yagmail                              # Needs Installation
 from plyer import notification              # Needs Installation
 
 from pathlib import Path
-from PIL import ImageGrab
 from datetime import datetime
 from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
+
+from pyisemail import is_email
 
 from user_db import Database
 
@@ -41,6 +44,7 @@ def disable():
     vid_entry.configure(state=DISABLED)
 
 def switch2():
+
     log.withdraw()
     window.deiconify()
 
@@ -63,6 +67,7 @@ def logger():
         window.destroy()
 
 def switch():
+
     window.withdraw()
 
     global log, user_entry, pass_entry
@@ -105,12 +110,11 @@ def input():
     number = sms_entry.get()
 
     # Email Validation
-    valid_mail = validate_email(email_address=email, check_format=True, check_blacklist=True, check_dns=True,
-                                dns_timeout=10, check_smtp=True, smtp_timeout=10, smtp_helo_host='my.host.name',
-                                smtp_from_address='my@from.addr.ess', smtp_debug=False)
+    valid_mail = is_email(email, check_dns=True)
 
     #Password Verification
     special_char = re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,20}$")
+
     if re.search(special_char, password):
         valid_pass = True
     else:
@@ -129,19 +133,6 @@ def input():
 
         messagebox.showerror(message="Email Already Registered!")
 
-    elif not os.path.isdir(directory):
-
-        if is_custom:
-
-          wait.destroy()
-
-          # Creates Error Window
-          messagebox.showerror(message="Directory does not Exist!")
-
-        else:
-            os.mkdir(directory)
-            os.mkdir(image_save_path)
-
     elif not valid_mail:
 
         # Creates Error Window
@@ -151,14 +142,26 @@ def input():
 
         # Creates Error Window
         messagebox.showerror(message='Password must be 8 to 20 characters long and should\n '
-                                        'contain at least one (1) digit, uppercase, and lowercase letter!')
+                                    'contain at least one (1) digit, uppercase, and lowercase letter!')
 
     elif not valid_sms:
 
         # Creates Error Window
         messagebox.showerror(message="Invalid SMS Number!")
 
+    elif not os.path.isdir(directory):
+
+        if is_custom:
+
+          # Creates Error Window
+          messagebox.showerror(message="Directory does not Exist!")
+
+        else:
+            os.mkdir(directory)
+            os.mkdir(image_save_path)
+
     else:
+
         db.signup(email, password, number, directory, image_save_path)
         phone_number = sms_entry.get() + "@sms.clicksend.com"
         messagebox.showinfo(title="Success!", message="Successfully Registered!")
@@ -167,11 +170,12 @@ def input():
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Function that recalls the offset thread whenever a detection has occurred
+
 def countdown():
+
     global key, count, istream, offset
 
     # Thread initializers
-
     offset = Thread(target=offsetter)
     offset.daemon = True
     offset.start()
@@ -182,9 +186,10 @@ def countdown():
 def offsetter():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif
+    global notif, permit_detect
 
     hasrecorded = False     # Checks if an image had already been recorded
+    permit_detect = False   # Buffers the detection
 
     delay.sleep(2)          # 2-second offset
 
@@ -196,15 +201,13 @@ def offsetter():
 
     # Video initialization functions
     video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, screen_size)
+                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, (1280, 720))
 
     # Loop for recording
     while istream and (int(delay.time() - start) < 60):
 
         # Frame Fetcher
-        frame = pyautogui.screenshot()
-        image = np.array(frame)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        ret, image = cap.read()
         video.write(image)
 
         # Image Recorder
@@ -215,7 +218,6 @@ def offsetter():
             cv2.imwrite(os.path.join(image_save_path, imgname), image)
             hasrecorded = True
 
-
             notif = Thread(target=mailer, args=(imgname, dt))
             notif.daemon = True
             notif.start()
@@ -223,12 +225,12 @@ def offsetter():
     # Video Finalizer
     video.release()
 
-    delay.sleep(3)
-
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs Email Notification
 def mailer(name, timestamp):
+
+    global count
 
     stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
 
@@ -242,7 +244,24 @@ def mailer(name, timestamp):
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+# Permit and Buffer Functions, Allows for Controlled Detection Stream
+
+def permit():
+
+    global permit_detect
+    delay.sleep(3)
+    permit_detect = True
+
+def buffer():
+
+    allow = Thread(target=permit)
+    allow.daemon = True
+    allow.start()
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 # Load image helper function
+
 def load_image_into_numpy_array(image):
     (im_width, im_height) = image.size
     return np.array(image.getdata()).reshape(
@@ -250,10 +269,17 @@ def load_image_into_numpy_array(image):
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+# Capture Variables
+
+cap = cv2.VideoCapture(1)
+cap.set(3, 1280)
+cap.set(4, 720)
+
 # Stream Check Variable
 istream = False
 hasrecorded = True
 count = 0
+permit_detect = True
 
 #Variables for E-mail and Phone
 project_address = "avs.detector.notif@gmail.com"
@@ -354,8 +380,7 @@ with detection_graph.as_default():
     with tf.compat.v1.Session(graph=detection_graph) as sess:
         while True:
             # Read frame from camera
-            img = ImageGrab.grab(bbox=(0, 43, 1366, 686))
-            image_np = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+            ret, image_np = cap.retrieve(cap.grab())
             # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
             image_np_expanded = np.expand_dims(image_np, axis=0)
             # Extract image tensor
@@ -397,20 +422,28 @@ with detection_graph.as_default():
 
             # Detection checkers
             if np.count_nonzero(boxes) > 0:
-                if istream == False:
+                if istream == False and permit_detect:
                     istream = True
                     countdown()
+                    notification.notify(
+                        title="DETECTION REPORT",
+                        message=str(count) + " Detections Made!",
+                        app_icon="avs_icon.ico",
+                        timeout=15
+                    )
             else:
                 istream = False
+                if permit_detect == False:
+                    buffer()
 
-            if cv2.waitKey(1) == ord("q"):
-                cv2.destroyAllWindows()
+            if cv2.waitKey(25) & 0xFF == ord('q'):
                 istream = False
+                cv2.destroyAllWindows()
                 break
 
 #Background Notification
 notification.notify(
-            title = "SUMMARY REPORT",
+            title = "DETECTION REPORT",
             message = str(count) + " Detections Made!",
             app_icon = "avs_icon.ico"
             )
