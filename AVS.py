@@ -1,19 +1,18 @@
 import sys
+import shutil
 import os, cv2
-import pyautogui
 import numpy as np
 import time as delay
 import tensorflow as tf
+from pathlib import Path
 from threading import Thread
+from datetime import datetime
+from matplotlib import pyplot as plt
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as vis_util
 
 # User Prompt imports
-import socket
 import phonenumbers                         # Needs Installation
-
-from tkinter import *
-from tkinter import messagebox
-
-from validate_email import validate_email   # Needs Installation
 
 # E-mail import
 import yagmail                              # Needs Installation
@@ -21,14 +20,14 @@ import yagmail                              # Needs Installation
 # Background Notification imports
 from plyer import notification              # Needs Installation
 
-from pathlib import Path
-from datetime import datetime
-from matplotlib import pyplot as plt
-from object_detection.utils import label_map_util
-from object_detection.utils import visualization_utils as vis_util
+# Email Validation import
+from pyisemail import is_email              # Needs Installation
 
-from pyisemail import is_email
+# GUI tools
+from tkinter import *
+from tkinter import messagebox
 
+# Allows Database Functionalities
 from user_db import Database
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -50,18 +49,20 @@ def switch2():
 
 def logger():
 
-    global email, sms, directory, image_save_path
+    global email, sms, directory, image_save_path, capture
+
     user_info = db.login(user_entry.get(), pass_entry.get())
 
     if user_info == None:
         messagebox.showerror(title="Invalid input!", message="No User Found.")
 
     else:
-
         email = user_info[1]
         sms = user_info[3]
         directory = user_info[4]
         image_save_path = user_info[5]
+        capture = logcamnum.get()
+        print(str(capture))
 
         log.destroy()
         window.destroy()
@@ -70,37 +71,46 @@ def switch():
 
     window.withdraw()
 
-    global log, user_entry, pass_entry
+    global log, user_entry, pass_entry, logcamnum
     log = Toplevel()
 
+    logcam = [0, 1, 2, 3, 4]
+
     # Window Appearance
-    log.title("Log In: Intruder Detection Application")
-    log.geometry('260x125')
+    log.title("Login: Intruder Detection Application")
+    log.geometry('260x140')
     log.wm_resizable(width='False', height='False')
 
-    user_label = Label(log, text='Email', font=('bold', 10), padx=10, pady=10)
+    user_label = Label(log, text='Email', font=('bold', 10), padx=10, pady=5)
     user_label.grid(row=0, column=1, sticky=W)
     user_entry = Entry(log)
     user_entry.grid(row=0, column=2, sticky=W)
 
-    pass_label = Label(log, text='Password', font=('bold', 10), padx=10, pady=15)
+    pass_label = Label(log, text='Password', font=('bold', 10), padx=10, pady=5)
     pass_label.grid(row=1, column=1, sticky=W)
     pass_entry = Entry(log)
     pass_entry.grid(row=1, column=2, sticky=W)
 
+    logcam_label = Label(log, text='Camera', font=('bold', 10), padx=10, pady=5)
+    logcam_label.grid(row=2, column=1, sticky=W)
+
+    logcamnum = IntVar(log)
+    logcamnum.set(cam[0])
+
+    logcam_select = OptionMenu(log, logcamnum, *logcam)
+    logcam_select.grid(row=2, column=2, sticky=W)
+
     confirm = Button(log, text='Confirm', width=12, command=logger)
-    confirm.grid(row=2, column=2, padx=15)
+    confirm.grid(row=3, column=2, padx=15, pady=10)
 
     back = Button(log, text='Back', width=12, command=switch2)
-    back.grid(row=2, column=1, padx=15)
-
-    log.iconbitmap("avs_icon.ico")
+    back.grid(row=3, column=1, padx=15, pady=10)
 
 def input():
 
-    # User Information
+    # User Information Variables
     global email, window, error, sms, phone_number, directory, image_save_path, is_custom
-    global wait, test
+    global wait, test, diskfree, diskused, disktotal, capture
 
     # Fetch User Data
     email = email_entry.get()
@@ -130,60 +140,63 @@ def input():
 
     # Error Messages
     if not db.verify(email) == None:
-
         messagebox.showerror(message="Email Already Registered!")
 
     elif not valid_mail:
-
         # Creates Error Window
         messagebox.showerror(message="Invalid Email Address!")
 
     elif not valid_pass:
-
         # Creates Error Window
         messagebox.showerror(message='Password must be 8 to 20 characters long and should\n '
                                     'contain at least one (1) digit, uppercase, and lowercase letter!')
 
     elif not valid_sms:
-
         # Creates Error Window
         messagebox.showerror(message="Invalid SMS Number!")
 
     elif not os.path.isdir(directory):
-
         if is_custom:
-
           # Creates Error Window
           messagebox.showerror(message="Directory does not Exist!")
 
         else:
             os.mkdir(directory)
             os.mkdir(image_save_path)
-
     else:
+        disktotal, diskused, diskfree = shutil.disk_usage(directory)
 
-        db.signup(email, password, number, directory, image_save_path)
-        phone_number = sms_entry.get() + "@sms.clicksend.com"
-        messagebox.showinfo(title="Success!", message="Successfully Registered!")
-        window.destroy()
+        diskfree = diskfree // (2**30)
+        diskused = diskused // (2**30)
+
+        if diskfree <= 1:
+            messagebox.showerror(message="Not Enough Memory for Disk Space (1 GB)\n"
+                                "Space Used: " + str(diskused) + " GB Space Used: " + str(diskfree) + " GB")
+
+        else:
+            db.signup(email, password, number, directory, image_save_path)
+            phone_number = sms_entry.get() + "@sms.clicksend.com"
+            capture = camnum.get()
+            messagebox.showinfo(title="Success!", message="Successfully Registered!")
+            window.destroy()
+
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# Function that recalls the offset thread whenever a detection has occurred
-
+# Function that recalls the record thread whenever a permitted detection has occurred
 def countdown():
 
     global key, count, istream, offset
 
     # Thread initializers
-    offset = Thread(target=offsetter)
+    offset = Thread(target=record)
     offset.daemon = True
     offset.start()
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs the 2-sec. offset and recording functions in another thread.
-def offsetter():
+def record():
 
     global count, istream   # Person counter variable, Stream checking variable
     global notif, permit_detect
@@ -201,7 +214,7 @@ def offsetter():
 
     # Video initialization functions
     video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'MJPG'), 20.0, (1280, 720))
+                            cv2.VideoWriter_fourcc(*'XVID'), 00, (1280, 720))
 
     # Loop for recording
     while istream and (int(delay.time() - start) < 60):
@@ -210,7 +223,7 @@ def offsetter():
         ret, image = cap.read()
         video.write(image)
 
-        # Image Recorder
+        # Image Snapshot
         if hasrecorded == False:
             count += 1
 
@@ -225,21 +238,26 @@ def offsetter():
     # Video Finalizer
     video.release()
 
-#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs Email Notification
 def mailer(name, timestamp):
 
-    global count
+    global count, sms
 
     stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
-
     msg = yagmail.SMTP(project_address, password)
+
     msg.send(                                           # Mail to User Address
         to = email,
         subject = "Alert!",
         contents = "Intruder detected at " + stamp,
         attachments = os.path.join(image_save_path, name)
+    )
+    msg.send(
+        to = phone_number,
+        subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
+        contents = "Intruder detected at " + stamp
     )
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -261,7 +279,6 @@ def buffer():
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Load image helper function
-
 def load_image_into_numpy_array(image):
     (im_width, im_height) = image.size
     return np.array(image.getdata()).reshape(
@@ -269,44 +286,26 @@ def load_image_into_numpy_array(image):
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# Capture Variables
-
-cap = cv2.VideoCapture(1)
-cap.set(3, 1280)
-cap.set(4, 720)
-
-# Stream Check Variable
-istream = False
-hasrecorded = True
-count = 0
-permit_detect = True
-
-#Variables for E-mail and Phone
-project_address = "avs.detector.notif@gmail.com"
-password = "avspy4121"
-
+# User Input Variables
 email = ""
 directory = ""
 phone_number = ""
 image_save_path = ""
 
-# Set screen size for Screen Recording
-screen_size = pyautogui.size()
-
 # Create Database if it does not already Exist
 db = Database('users_log.db')
-
-# Set Display for turning off Program
-icon = cv2.imread("AVS Show.jpg")
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # GUI: User Prompt
+# GUI: User Prompt
 window = Tk()
+
+cam = [0, 1, 2, 3, 4]
 
 # Window Appearance
 window.title("Sign Up: Intruder Detection Application")
-window.geometry('330x275')
+window.geometry('335x280')
 window.wm_resizable(width='False', height='False')
 
 # Email Widgets
@@ -333,19 +332,48 @@ vid_dir.grid(row=3, column=1, sticky=W)
 vid_entry = Entry(window)
 vid_entry.grid(row=3, column=2)
 
+cam_label = Label(window, text='Camera', font=('bold', 10), padx=10, pady=10)
+cam_label.grid(row=4, column=1, sticky=W)
+
+camnum = IntVar(window)
+camnum.set(cam[0])
+
+cam_select = OptionMenu(window, camnum, *cam)
+cam_select.grid(row=4, column=2, sticky=W)
+
 is_custom = True
 custom = Radiobutton(window, text="Save to Public Videos Folder", command=disable, padx=10, pady=10)
-custom.grid(row=4, column=1, sticky=W)
+custom.grid(row=5, column=1, sticky=W)
 
 # Button
 sign_up = Button(window, text='Sign Up', width=12, command=input)
-sign_up.grid(row=5, column=2)
+sign_up.grid(row=6, column=2)
 
 login = Button(window, text='Login', width=12, command=switch)
-login.grid(row=5, column=1)
+login.grid(row=6, column=1)
 
 window.iconbitmap("avs_icon.ico")
 window.mainloop()
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Capture Variables
+cap = cv2.VideoCapture(capture)
+cap.set(3, 1280)
+cap.set(4, 720)
+
+# Set Display for turning off Program
+icon = cv2.imread("AVS Show.jpg")
+
+# Stream Check Variables
+count = 0
+istream = False
+hasrecorded = True
+permit_detect = True
+
+# Variables for E-mail and Phone
+project_address = "avs.detector.notif@gmail.com"
+password = "avspy4121"
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -425,12 +453,6 @@ with detection_graph.as_default():
                 if istream == False and permit_detect:
                     istream = True
                     countdown()
-                    notification.notify(
-                        title="DETECTION REPORT",
-                        message=str(count) + " Detections Made!",
-                        app_icon="avs_icon.ico",
-                        timeout=15
-                    )
             else:
                 istream = False
                 if permit_detect == False:

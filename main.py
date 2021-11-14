@@ -3,7 +3,7 @@ import cv2
 import sys
 import numpy as np
 import tensorflow as tf
-from PIL import ImageGrab
+#from PIL import ImageGrab
 from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
@@ -16,12 +16,9 @@ from plyer import notification
 from datetime import datetime
 
 cap = cv2.VideoCapture(1)
-cap.set(3, 1280)
-cap.set(4, 720)
+cap.set(3, 1920)
+cap.set(4, 1080)
 
-count = 0
-istream = False
-permit_detect = True
 
 image_save_path = "C:/Users/Public/Pictures/SP_Testing"
 directory = "C:/Users/Public/Videos/SP_Vid_Testing"
