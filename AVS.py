@@ -34,13 +34,28 @@ from user_db import Database
 
 #Functions for GUI
 
+def cloak(e):
+    password_label["font"] = ("bold", 10)
+    password_entry.configure(show="*")
+
+def uncloak(e):
+    password_label["font"] = ("underlined", 10)
+    password_entry.configure(show="")
+
+def l_cloak(e):
+    password_label["font"] = ("bold", 10)
+    pass_entry.configure(show="*")
+
+def l_uncloak(e):
+    password_label["font"] = ("underlined", 10)
+    pass_entry.configure(show="")
+
 def disable():
     global is_custom
 
     is_custom = False
     vid_entry.delete(0, END)
     vid_entry.insert(0, "C:/Users/Public/Videos/avs_videos")
-    vid_entry.configure(state=DISABLED)
 
 def switch2():
 
@@ -58,11 +73,10 @@ def logger():
 
     else:
         email = user_info[1]
-        sms = user_info[3]
+        sms = user_info[3] + "@sms.clicksend.com"
         directory = user_info[4]
         image_save_path = user_info[5]
         capture = logcamnum.get()
-        print(str(capture))
 
         log.destroy()
         window.destroy()
@@ -71,7 +85,7 @@ def switch():
 
     window.withdraw()
 
-    global log, user_entry, pass_entry, logcamnum
+    global log, user_entry, pass_entry, pass_label, logcamnum
     log = Toplevel()
 
     logcam = [0, 1, 2, 3, 4]
@@ -88,7 +102,10 @@ def switch():
 
     pass_label = Label(log, text='Password', font=('bold', 10), padx=10, pady=5)
     pass_label.grid(row=1, column=1, sticky=W)
-    pass_entry = Entry(log)
+    pass_label.bind("<Enter>", l_uncloak)
+    pass_label.bind("<Leave>", l_cloak)
+
+    pass_entry = Entry(log, show="*")
     pass_entry.grid(row=1, column=2, sticky=W)
 
     logcam_label = Label(log, text='Camera', font=('bold', 10), padx=10, pady=5)
@@ -109,8 +126,8 @@ def switch():
 def input():
 
     # User Information Variables
-    global email, window, error, sms, phone_number, directory, image_save_path, is_custom
-    global wait, test, diskfree, diskused, disktotal, capture
+    global email, window, sms, directory, image_save_path, is_custom
+    global diskfree, diskused, disktotal, capture
 
     # Fetch User Data
     email = email_entry.get()
@@ -119,11 +136,25 @@ def input():
     image_save_path = vid_entry.get() + "/recorded_images"
     number = sms_entry.get()
 
+    # Email Duplicate Validation
+    if db.verify(email) == None:
+        duplicate_mail = False
+
     # Email Validation
-    valid_mail = is_email(email, check_dns=True)
+    if not duplicate_mail and is_email(email, check_dns=True):
+        try:
+            test_msg = yagmail.SMTP(project_address, mailpass)
+            test_msg.send(to = email,
+                          subject = 'AVS Mail Tester',
+                          contents = "Welcome! Mailing feature is Successful. Please ignore message if wronhly sent.")
+            valid_mail = True
+        except:
+            valid_mail = False
+    else:
+        valid_mail = False
 
     #Password Verification
-    special_char = re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,20}$")
+    special_char = re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,12}$")
 
     if re.search(special_char, password):
         valid_pass = True
@@ -133,13 +164,12 @@ def input():
     # Phone Number Validation (feat. Google's Phone Number Library)
     try:
         if phonenumbers.parse(sms_entry.get()):
-            sms = phonenumbers.parse(sms_entry.get())
-            valid_sms = phonenumbers.is_valid_number(sms)
+            valid_sms = phonenumbers.is_valid_number(phonenumbers.parse(sms_entry.get()))
     except:
             valid_sms = False
 
     # Error Messages
-    if not db.verify(email) == None:
+    if duplicate_mail:
         messagebox.showerror(message="Email Already Registered!")
 
     elif not valid_mail:
@@ -148,7 +178,7 @@ def input():
 
     elif not valid_pass:
         # Creates Error Window
-        messagebox.showerror(message='Password must be 8 to 20 characters long and should\n '
+        messagebox.showerror(message='Password must be 8 to 12 characters long and should\n '
                                     'contain at least one (1) digit, uppercase, and lowercase letter!')
 
     elif not valid_sms:
@@ -164,10 +194,11 @@ def input():
             os.mkdir(directory)
             os.mkdir(image_save_path)
     else:
+
         disktotal, diskused, diskfree = shutil.disk_usage(directory)
 
-        diskfree = diskfree // (2**30)
-        diskused = diskused // (2**30)
+        diskfree = diskfree // (2 ** 30)
+        diskused = diskused // (2 ** 30)
 
         if diskfree <= 1:
             messagebox.showerror(message="Not Enough Memory for Disk Space (1 GB)\n"
@@ -175,7 +206,7 @@ def input():
 
         else:
             db.signup(email, password, number, directory, image_save_path)
-            phone_number = sms_entry.get() + "@sms.clicksend.com"
+            sms = number + "@sms.clicksend.com"
             capture = camnum.get()
             messagebox.showinfo(title="Success!", message="Successfully Registered!")
             window.destroy()
@@ -186,7 +217,11 @@ def input():
 # Function that recalls the record thread whenever a permitted detection has occurred
 def countdown():
 
-    global key, count, istream, offset
+    global count, istream, diskfree, diskused, disktotal
+
+    disktotal, diskused, diskfree = shutil.disk_usage(directory)
+    diskfree = diskfree // (2 ** 30)
+    diskused = diskused // (2 ** 30)
 
     # Thread initializers
     offset = Thread(target=record)
@@ -212,31 +247,50 @@ def record():
     datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
     timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
 
-    # Video initialization functions
-    video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+    if diskfree > 1:
+        # Video initialization functions
+        video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
                             cv2.VideoWriter_fourcc(*'XVID'), 00, (1280, 720))
 
-    # Loop for recording
-    while istream and (int(delay.time() - start) < 60):
+        # Loop for recording
+        while istream and (int(delay.time() - start) < 60):
 
-        # Frame Fetcher
-        ret, image = cap.read()
-        video.write(image)
+            # Frame Fetcher
+            ret, image = cap.read()
+            video.write(image)
 
-        # Image Snapshot
-        if hasrecorded == False:
-            count += 1
+            # Image Snapshot
+            if hasrecorded == False:
+                count += 1
 
-            imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-            cv2.imwrite(os.path.join(image_save_path, imgname), image)
-            hasrecorded = True
+                imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+                cv2.imwrite(os.path.join(image_save_path, imgname), image)
+                hasrecorded = True
 
-            notif = Thread(target=mailer, args=(imgname, dt))
+                notif = Thread(target=mailer, args=(imgname, dt))
+                notif.daemon = True
+                notif.start()
+
+        # Video Finalizer
+        video.release()
+    else:
+        try:
+            # Image Snapshot
+            if hasrecorded == False:
+                count += 1
+
+                ret, image = cap.read()
+                imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+                cv2.imwrite(os.path.join(image_save_path, imgname), image)
+                hasrecorded = True
+
+                notif = Thread(target=mailer, args=(imgname, dt))
+                notif.daemon = True
+                notif.start()
+        except:
+            notif = Thread(target=warning_mailer, args=(dt))
             notif.daemon = True
             notif.start()
-
-    # Video Finalizer
-    video.release()
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -246,18 +300,39 @@ def mailer(name, timestamp):
     global count, sms
 
     stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
-    msg = yagmail.SMTP(project_address, password)
+    msg = yagmail.SMTP(project_address, mailpass)
 
+    msg.send(                                           # Mail to User SMS
+        to = sms,
+        subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
+        contents = "Intruder detected at " + stamp
+    )
     msg.send(                                           # Mail to User Address
         to = email,
         subject = "Alert!",
         contents = "Intruder detected at " + stamp,
         attachments = os.path.join(image_save_path, name)
     )
-    msg.send(
-        to = phone_number,
+
+#------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Performs Email Notification
+def warning_mailer(name, timestamp):
+
+    global count, sms
+
+    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
+    msg = yagmail.SMTP(project_address, mailpass)
+
+    msg.send(                                           # Mail to User SMS
+        to = sms,
         subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
-        contents = "Intruder detected at " + stamp
+        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected at " + stamp
+    )
+    msg.send(                                           # Mail to User Address
+        to = email,
+        subject = "Alert!",
+        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected at " + stamp
     )
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -295,9 +370,17 @@ image_save_path = ""
 # Create Database if it does not already Exist
 db = Database('users_log.db')
 
+# Variables for E-mail and Phone
+project_address = "avs.detector.notif@gmail.com"
+mailpass = "avspy4121"
+
+# Memory-check Variables
+disktotal = 0
+diskused = 0
+diskfree = 0
+
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# GUI: User Prompt
 # GUI: User Prompt
 window = Tk()
 
@@ -316,7 +399,10 @@ email_entry.grid(row=0, column=2)
 
 password_label = Label(window, text='Password', font=('bold',10), padx=10, pady=10)
 password_label.grid(row=1, column=1, sticky=W)
-password_entry = Entry(window)
+password_label.bind("<Enter>", uncloak)
+password_label.bind("<Leave>", cloak)
+
+password_entry = Entry(window, show="*")
 password_entry.grid(row=1, column=2)
 
 # SMS Widgets
@@ -365,7 +451,7 @@ cap.set(4, 720)
 # Set Display for turning off Program
 icon = cv2.imread("AVS Show.jpg")
 
-# Stream Check Variables
+# Stream-check Variables
 count = 0
 istream = False
 hasrecorded = True
@@ -373,7 +459,7 @@ permit_detect = True
 
 # Variables for E-mail and Phone
 project_address = "avs.detector.notif@gmail.com"
-password = "avspy4121"
+mailpass = "avspy4121"
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
