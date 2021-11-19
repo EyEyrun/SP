@@ -35,19 +35,19 @@ from user_db import Database
 #Functions for GUI
 
 def cloak(e):
-    password_label["font"] = ("bold", 10)
+    password_label["text"] = "Password"
     password_entry.configure(show="*")
 
 def uncloak(e):
-    password_label["font"] = ("underlined", 10)
+    password_label["text"] = "Check Password"
     password_entry.configure(show="")
 
 def l_cloak(e):
-    password_label["font"] = ("bold", 10)
+    pass_label["text"] = "Password"
     pass_entry.configure(show="*")
 
 def l_uncloak(e):
-    password_label["font"] = ("underlined", 10)
+    pass_label["text"] = "Check Password"
     pass_entry.configure(show="")
 
 def disable():
@@ -122,6 +122,8 @@ def switch():
 
     back = Button(log, text='Back', width=12, command=switch2)
     back.grid(row=3, column=1, padx=15, pady=10)
+
+    log.iconbitmap("avs_icon.ico")
 
 def input():
 
@@ -217,7 +219,7 @@ def input():
 # Function that recalls the record thread whenever a permitted detection has occurred
 def countdown():
 
-    global count, istream, diskfree, diskused, disktotal
+    global diskfree, diskused, disktotal
 
     disktotal, diskused, diskfree = shutil.disk_usage(directory)
     diskfree = diskfree // (2 ** 30)
@@ -250,7 +252,7 @@ def record():
     if diskfree > 1:
         # Video initialization functions
         video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
-                            cv2.VideoWriter_fourcc(*'XVID'), 00, (1280, 720))
+                            cv2.VideoWriter_fourcc(*'XVID'), 20, (1280, 720))
 
         # Loop for recording
         while istream and (int(delay.time() - start) < 60):
@@ -273,6 +275,7 @@ def record():
 
         # Video Finalizer
         video.release()
+
     else:
         try:
             # Image Snapshot
@@ -282,37 +285,17 @@ def record():
                 ret, image = cap.read()
                 imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
                 cv2.imwrite(os.path.join(image_save_path, imgname), image)
-                hasrecorded = True
-
                 notif = Thread(target=mailer, args=(imgname, dt))
                 notif.daemon = True
                 notif.start()
+                hasrecorded = True
         except:
-            notif = Thread(target=warning_mailer, args=(dt))
-            notif.daemon = True
-            notif.start()
-
-#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-# Performs Email Notification
-def mailer(name, timestamp):
-
-    global count, sms
-
-    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
-    msg = yagmail.SMTP(project_address, mailpass)
-
-    msg.send(                                           # Mail to User SMS
-        to = sms,
-        subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
-        contents = "Intruder detected at " + stamp
-    )
-    msg.send(                                           # Mail to User Address
-        to = email,
-        subject = "Alert!",
-        contents = "Intruder detected at " + stamp,
-        attachments = os.path.join(image_save_path, name)
-    )
+            if hasrecorded == False:
+                count +=1
+                notif = Thread(target=warning_mailer, args=(imgname, dt))
+                notif.daemon = True
+                notif.start()
+                hasrecorded = True
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -336,6 +319,28 @@ def warning_mailer(name, timestamp):
     )
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Performs Email Notification
+def mailer(name, timestamp):
+
+    global count, sms
+
+    stamp = timestamp.strftime("%B %d, %Y - %I:%M %p") # Timestamp in String
+    msg = yagmail.SMTP(project_address, mailpass)
+
+    msg.send(                                           # Mail to User SMS
+        to = sms,
+        subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
+        contents = "Intruder detected at " + stamp
+    )
+    msg.send(                                           # Mail to User Address
+        to = email,
+        subject = "Alert!",
+        contents = "Intruder detected at " + stamp,
+        attachments = os.path.join(image_save_path, name)
+    )
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Permit and Buffer Functions, Allows for Controlled Detection Stream
 
@@ -454,7 +459,6 @@ icon = cv2.imread("AVS Show.jpg")
 # Stream-check Variables
 count = 0
 istream = False
-hasrecorded = True
 permit_detect = True
 
 # Variables for E-mail and Phone
@@ -549,7 +553,7 @@ with detection_graph.as_default():
                 cv2.destroyAllWindows()
                 break
 
-#Background Notification
+# Background Notification
 notification.notify(
             title = "DETECTION REPORT",
             message = str(count) + " Detections Made!",
