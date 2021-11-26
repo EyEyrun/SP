@@ -1,34 +1,24 @@
 import sys
 import shutil
+import bcrypt
+import yagmail                              
 import os, cv2
 import numpy as np
+import phonenumbers                         
 import time as delay
 import tensorflow as tf
+
+from tkinter import *
 from pathlib import Path
+from user_db import Database
 from threading import Thread
 from datetime import datetime
+from pyisemail import is_email              
+from tkinter import messagebox
+from plyer import notification              
 from matplotlib import pyplot as plt
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
-
-# User Prompt imports
-import phonenumbers                         # Needs Installation
-
-# E-mail import
-import yagmail                              # Needs Installation
-
-# Background Notification imports
-from plyer import notification              # Needs Installation
-
-# Email Validation import
-from pyisemail import is_email              # Needs Installation
-
-# GUI tools
-from tkinter import *
-from tkinter import messagebox
-
-# Allows Database Functionalities
-from user_db import Database
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -50,7 +40,7 @@ def l_uncloak(e):
     pass_label["text"] = "Check Password"
     pass_entry.configure(show="")
 
-def disable():
+def insert():
     global is_custom
 
     is_custom = False
@@ -66,10 +56,14 @@ def logger():
 
     global email, sms, directory, image_save_path, capture
 
-    user_info = db.login(user_entry.get(), pass_entry.get())
+    pass_code = bytes(pass_entry.get(), encoding='utf-8')
+    user_info = db.verify(user_entry.get())
 
     if user_info == None:
         messagebox.showerror(title="Invalid input!", message="No User Found.")
+
+    elif not bcrypt.checkpw(pass_code, user_info[2]):
+    	messagebox.showerror(title="Invalid Password!", message="Incorrect Password.")
 
     else:
         email = user_info[1]
@@ -128,15 +122,15 @@ def switch():
 def input():
 
     # User Information Variables
-    global email, window, sms, directory, image_save_path, is_custom
+    global email, sms, directory, image_save_path, is_custom
     global diskfree, diskused, disktotal, capture
 
     # Fetch User Data
     email = email_entry.get()
     password = password_entry.get()
+    number = sms_entry.get()
     directory = vid_entry.get()
     image_save_path = vid_entry.get() + "/recorded_images"
-    number = sms_entry.get()
 
     # Email Duplicate Validation
     if db.verify(email) == None:
@@ -148,7 +142,7 @@ def input():
             test_msg = yagmail.SMTP(project_address, mailpass)
             test_msg.send(to = email,
                           subject = 'AVS Mail Tester',
-                          contents = "Welcome! Mailing feature is Successful. Please ignore message if wronhly sent.")
+                          contents = "Success! Mailing Feature is Functional.")
             valid_mail = True
         except:
             valid_mail = False
@@ -156,14 +150,14 @@ def input():
         valid_mail = False
 
     #Password Verification
-    special_char = re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,12}$")
+    std_char = re.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,12}$")
 
-    if re.search(special_char, password):
+    if re.search(std_char, password):
         valid_pass = True
     else:
         valid_pass = False
 
-    # Phone Number Validation (feat. Google's Phone Number Library)
+    # Phone Number Validation
     try:
         if phonenumbers.parse(sms_entry.get()):
             valid_sms = phonenumbers.is_valid_number(phonenumbers.parse(sms_entry.get()))
@@ -195,24 +189,29 @@ def input():
         else:
             os.mkdir(directory)
             os.mkdir(image_save_path)
+
     else:
-
         disktotal, diskused, diskfree = shutil.disk_usage(directory)
-
-        diskfree = diskfree // (2 ** 30)
-        diskused = diskused // (2 ** 30)
+        diskfree = float(diskfree // (2 ** 30))
+        diskused = float(diskused // (2 ** 30))
+        disktotal = float(disktotal // (2 ** 30))
 
         if diskfree <= 1:
-            messagebox.showerror(message="Not Enough Memory for Disk Space (1 GB)\n"
-                                "Space Used: " + str(diskused) + " GB Space Used: " + str(diskfree) + " GB")
+            messagebox.showerror(message="Not Enough Memory for Disk Space (10% total GB)\nSpace Used: " + str(
+                diskused) + " GB Space Used: " + str(diskfree) + " GB")
 
         else:
-            db.signup(email, password, number, directory, image_save_path)
+            if is_custom:
+                os.mkdir(image_save_path)
+            password = bytes(password, encoding='utf-8')
+            hash = bcrypt.hashpw(password, bcrypt.gensalt())
+
+            db.signup(email, hash, number, directory, image_save_path)
             sms = number + "@sms.clicksend.com"
             capture = camnum.get()
             messagebox.showinfo(title="Success!", message="Successfully Registered!")
-            window.destroy()
 
+            window.destroy()
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -222,8 +221,9 @@ def countdown():
     global diskfree, diskused, disktotal
 
     disktotal, diskused, diskfree = shutil.disk_usage(directory)
-    diskfree = diskfree // (2 ** 30)
-    diskused = diskused // (2 ** 30)
+    diskfree = float(diskfree // (2 ** 30))
+    diskused = float(diskused // (2 ** 30))
+    disktotal = float(disktotal // (2 ** 30))
 
     # Thread initializers
     offset = Thread(target=record)
@@ -236,7 +236,7 @@ def countdown():
 def record():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif, permit_detect
+    global notif, permit_detect, diskfree, disktotal
 
     hasrecorded = False     # Checks if an image had already been recorded
     permit_detect = False   # Buffers the detection
@@ -249,7 +249,10 @@ def record():
     datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
     timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
 
-    if diskfree > 1:
+    # Background Notification
+    notification.notify(title = "DETECTION REPORT", message = str(count + 1) + " Detections Made!", app_icon = "avs_icon.ico")
+
+    if diskfree > float(disktotal):
         # Video initialization functions
         video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
                             cv2.VideoWriter_fourcc(*'XVID'), 20, (1280, 720))
@@ -292,7 +295,7 @@ def record():
         except:
             if hasrecorded == False:
                 count +=1
-                notif = Thread(target=warning_mailer, args=(imgname, dt))
+                notif = Thread(target=warning_mailer, args=(dt,))
                 notif.daemon = True
                 notif.start()
                 hasrecorded = True
@@ -300,7 +303,7 @@ def record():
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Performs Email Notification
-def warning_mailer(name, timestamp):
+def warning_mailer(timestamp):
 
     global count, sms
 
@@ -433,7 +436,7 @@ cam_select = OptionMenu(window, camnum, *cam)
 cam_select.grid(row=4, column=2, sticky=W)
 
 is_custom = True
-custom = Radiobutton(window, text="Save to Public Videos Folder", command=disable, padx=10, pady=10)
+custom = Radiobutton(window, text="Save to Public Videos Folder", command=insert, padx=10, pady=10)
 custom.grid(row=5, column=1, sticky=W)
 
 # Button
