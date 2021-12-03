@@ -131,13 +131,14 @@ def input():
     number = sms_entry.get()
     directory = vid_entry.get()
     image_save_path = vid_entry.get() + "/recorded_images"
+    duplicate_mail = True
 
     # Email Duplicate Validation
     if db.verify(email) == None:
         duplicate_mail = False
 
     # Email Validation
-    if not duplicate_mail and is_email(email, check_dns=True):
+    if not db.verify(email) and is_email(email, check_dns=True):
         try:
             test_msg = yagmail.SMTP(project_address, mailpass)
             test_msg.send(to = email,
@@ -204,7 +205,16 @@ def input():
             if is_custom:
                 os.mkdir(image_save_path)
             password = bytes(password, encoding='utf-8')
-            hash = bcrypt.hashpw(password, bcrypt.gensalt())
+
+            round = 12
+            print("\n   Work Factor: " + str(round))
+
+            dur = delay.perf_counter_ns()
+            hash = bcrypt.hashpw(password, bcrypt.gensalt(rounds=round))
+            dur = float(delay.perf_counter_ns() - dur)
+
+            print("\n   Time Elapsed: " + str(dur // 1000000) + " milliseconds")
+            print("\n   Hash Generated: " + str(hash) + "\n")
 
             db.signup(email, hash, number, directory, image_save_path)
             sms = number + "@sms.clicksend.com"
@@ -236,10 +246,10 @@ def countdown():
 def record():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif, permit_detect, diskfree, disktotal
+    global notif, permit_record, diskfree, disktotal
 
     hasrecorded = False     # Checks if an image had already been recorded
-    permit_detect = False   # Buffers the detection
+    permit_record = False   # Buffers the detection
 
     delay.sleep(2)          # 2-second offset
 
@@ -249,10 +259,7 @@ def record():
     datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
     timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
 
-    # Background Notification
-    notification.notify(title = "DETECTION REPORT", message = str(count + 1) + " Detections Made!", app_icon = "avs_icon.ico")
-
-    if diskfree > float(disktotal):
+    if diskfree > 1:
         # Video initialization functions
         video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
                             cv2.VideoWriter_fourcc(*'XVID'), 20, (1280, 720))
@@ -302,7 +309,7 @@ def record():
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-# Performs Email Notification
+# Performs Warning Email Notification
 def warning_mailer(timestamp):
 
     global count, sms
@@ -346,18 +353,17 @@ def mailer(name, timestamp):
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Permit and Buffer Functions, Allows for Controlled Detection Stream
-
-def permit():
-
-    global permit_detect
-    delay.sleep(3)
-    permit_detect = True
-
 def buffer():
 
     allow = Thread(target=permit)
     allow.daemon = True
     allow.start()
+
+def permit():
+
+    global permit_record
+    delay.sleep(3)
+    permit_record = True
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -462,7 +468,7 @@ icon = cv2.imread("AVS Show.jpg")
 # Stream-check Variables
 count = 0
 istream = False
-permit_detect = True
+permit_record = True
 
 # Variables for E-mail and Phone
 project_address = "avs.detector.notif@gmail.com"
@@ -472,12 +478,10 @@ mailpass = "avspy4121"
 
 # Path to frozen detection graph and label map.
 MODEL_NAME = 'ssdlite_mobilenet_v2_coco_2018_05_09.pb'
-LABEL_MAP_NAME = 'mscoco_complete_label_map.pbtxt'
 PATH_TO_CKPT = os.path.join(os.curdir, 'frozen_models', MODEL_NAME)
-PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
 
-# Leave this in case a need to scale or add detections in the future
-NUM_CLASSES = 1
+LABEL_MAP_NAME = 'label_map.pbtxt'
+PATH_TO_LABELS = os.path.join(os.curdir, 'label_maps', LABEL_MAP_NAME)
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -489,6 +493,9 @@ with detection_graph.as_default():
         serialized_graph = fid.read()
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
+
+# Leave this in case a need to scale or add detections in the future
+NUM_CLASSES = 1
 
 # Load label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
@@ -543,12 +550,12 @@ with detection_graph.as_default():
 
             # Detection checkers
             if np.count_nonzero(boxes) > 0:
-                if istream == False and permit_detect:
+                if istream == False and permit_record:
                     istream = True
                     countdown()
             else:
                 istream = False
-                if permit_detect == False:
+                if permit_record == False:
                     buffer()
 
             if cv2.waitKey(25) & 0xFF == ord('q'):
@@ -563,5 +570,5 @@ notification.notify(
             app_icon = "avs_icon.ico"
             )
 
-# Kills all DAEMon-Flagged Threads
+# Terminates Main Thread
 sys.exit()
