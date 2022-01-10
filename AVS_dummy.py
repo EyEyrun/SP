@@ -143,7 +143,8 @@ def input():
             test_msg = yagmail.SMTP(project_address, mailpass)
             test_msg.send(to = email,
                           subject = 'AVS Mail Tester',
-                          contents = "Success! Mailing Feature is Functional.")
+                          contents = "Success! Mailing Feature is Functional. " 
+                          "If you are not expecting this message, please ignore email.")
             valid_mail = True
         except:
             valid_mail = False
@@ -176,7 +177,7 @@ def input():
     elif not valid_pass:
         # Creates Error Window
         messagebox.showerror(message='Password must be 8 to 12 characters long and should\n '
-                                    'contain at least one (1) digit, uppercase, and lowercase letter!')
+                                    'contain at least one (1) digit, uppercase, and lowercase letter.')
 
     elif not valid_sms:
         # Creates Error Window
@@ -188,8 +189,8 @@ def input():
           messagebox.showerror(message="Directory does not Exist!")
 
         else:
-            os.mkdir(directory)
-            os.mkdir(image_save_path)
+            if not os.path.isdir(directory):
+                os.mkdir(directory)
 
     else:
         disktotal, diskused, diskfree = shutil.disk_usage(directory)
@@ -202,19 +203,15 @@ def input():
                 diskused) + " GB Space Used: " + str(diskfree) + " GB")
 
         else:
-            if is_custom:
+            if not os.path.isdir(image_save_path):
                 os.mkdir(image_save_path)
+            
             password = bytes(password, encoding='utf-8')
-
-            round = 12
-            print("\n   Work Factor: " + str(round))
-
-            dur = delay.perf_counter_ns()
-            hash = bcrypt.hashpw(password, bcrypt.gensalt(rounds=round))
-            dur = float(delay.perf_counter_ns() - dur)
-
-            print("\n   Time Elapsed: " + str(dur // 1000000) + " milliseconds")
-            print("\n   Hash Generated: " + str(hash) + "\n")
+            hash = bcrypt.hashpw(password, bcrypt.gensalt(rounds=12))
+            #dur = float(delay.perf_counter_ns() - dur)
+            #dur = delay.perf_counter_ns()
+            #print("\n   Time Elapsed: " + str(dur // 1000000) + " milliseconds")
+            #print("\n   Hash Generated: " + str(hash) + "\n")
 
             db.signup(email, hash, number, directory, image_save_path)
             sms = number + "@sms.clicksend.com"
@@ -246,66 +243,76 @@ def countdown():
 def record():
 
     global count, istream   # Person counter variable, Stream checking variable
-    global notif, permit_record, diskfree, disktotal
+    global notif, permit_record, diskfree, disktotal, pipe
+    global buffer_in, frame_out
 
     hasrecorded = False     # Checks if an image had already been recorded
-    permit_record = False   # Buffers the detection
 
     delay.sleep(1)          # 1-second offset
+    
+    if istream:
 
-    start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
+        start = delay.time()    # Benchmarks with timestamp for the 60-sec. recording
 
-    dt = datetime.now()     # Gets exact date and time for naming records
-    datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
-    timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
+    
+        dt = datetime.now()     # Gets exact date and time for naming records
+        datestamp = int(dt.strftime("%Y%m%d"))  #Naming (Date)
+        timestamp = int(dt.strftime("%H%M%S"))  #Naming (Time)
+        
+        permit_record = False
+        count += 1
 
-    if diskfree > 1:
-        # Video initialization functions
-        video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
+        notification.notify(
+            title = "DETECTION REPORT",
+            message = str(count) + " Detections Made!",
+            app_icon = "avs_icon.ico",
+            timeout= 20
+            )
+
+        if diskfree > 1:
+            # Video initialization functions
+            video = cv2.VideoWriter(os.path.join(directory, 'VID_' + str(datestamp) + "_" + str(timestamp) + '.avi'),
                             cv2.VideoWriter_fourcc(*'XVID'), 20, (1280, 720))
 
-        # Loop for recording
-        while istream and (int(delay.time() - start) < 60):
+            # Loop for recording
+            while (int(delay.time() - start) < 60) and buffer_in:
 
-            # Frame Fetcher
-            ret, image = cap.read()
-            video.write(image)
-
-            # Image Snapshot
-            if hasrecorded == False:
-                count += 1
-
-                imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-                cv2.imwrite(os.path.join(image_save_path, imgname), image)
-                hasrecorded = True
-
-                notif = Thread(target=mailer, args=(imgname, dt))
-                notif.daemon = True
-                notif.start()
-
-        # Video Finalizer
-        video.release()
-
-    else:
-        try:
-            # Image Snapshot
-            if hasrecorded == False:
-                count += 1
-
+                # Frame Fetcher
                 ret, image = cap.read()
-                imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
-                cv2.imwrite(os.path.join(image_save_path, imgname), image)
-                notif = Thread(target=mailer, args=(imgname, dt))
-                notif.daemon = True
-                notif.start()
-                hasrecorded = True
-        except:
-            if hasrecorded == False:
-                count +=1
-                notif = Thread(target=warning_mailer, args=(dt,))
-                notif.daemon = True
-                notif.start()
-                hasrecorded = True
+                video.write(image)
+
+                # Image Snapshot
+                if hasrecorded == False:
+
+                    imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+                    cv2.imwrite(os.path.join(image_save_path, imgname), image)
+                    hasrecorded = True
+
+                    notif = Thread(target=mailer, args=(imgname, dt))
+                    notif.daemon = True
+                    notif.start()
+
+            # Video Finalizer
+            video.release()
+
+        else:
+            try:
+                # Image Snapshot
+                if hasrecorded == False:
+                    ret, image = cap.read()
+                    imgname = 'IMG' + str(datestamp) + "_" + str(timestamp) + '.jpg'
+                    cv2.imwrite(os.path.join(image_save_path, imgname), image)
+                    notif = Thread(target=mailer, args=(imgname, dt))
+                    notif.daemon = True
+                    notif.start()
+
+            except:
+                if hasrecorded == False:
+                    notif = Thread(target=warning_mailer, args=(dt,))
+                    notif.daemon = True
+                    notif.start()
+    else:
+        pipe = True
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -320,12 +327,12 @@ def warning_mailer(timestamp):
     msg.send(                                           # Mail to User SMS
         to = sms,
         subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
-        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected at " + stamp
+        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected on " + stamp
     )
     msg.send(                                           # Mail to User Address
         to = email,
         subject = "Alert!",
-        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected at " + stamp
+        contents = "WARNING: Storage Space Insufficient for Recording. Intruder detected on " + stamp
     )
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -353,7 +360,7 @@ def mailer(name, timestamp):
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Permit and Buffer Functions, Allows for Controlled Detection Stream
-def buffer():
+def detectbuffer():
 
     allow = Thread(target=permit)
     allow.daemon = True
@@ -361,9 +368,11 @@ def buffer():
 
 def permit():
 
-    global permit_record
-    delay.sleep()
+    global permit_record, pipe
+    delay.sleep(3)
+    print("Buffering...")
     permit_record = True
+    pipe = True
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -474,6 +483,12 @@ permit_record = True
 project_address = "avs.detector.notif@gmail.com"
 mailpass = "avspy4121"
 
+# Video-Buffer Variables
+frame_out = delay.time()
+buffer_in = True
+buffer_out = True
+pipe = True
+
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 # Path to frozen detection graph and label map.
@@ -550,23 +565,43 @@ with detection_graph.as_default():
 
             # Detection checkers
             if np.count_nonzero(boxes) > 0:
-                if istream == False and permit_record:
-                    istream = True
-                    countdown()
+
+                if not istream and permit_record:
+                    print("piping cold")
+                    if pipe:
+                        print("piping hot")
+                        buffer_in = True
+                        pipe = False
+                        countdown()
+
+                istream = True
+
             else:
-                istream = False
-                if permit_record == False:
-                    buffer()
+                if istream:
+                    print("frame_out is calculated")
+                    frame_out = delay.time()
+                    istream = False
+
+                if not buffer_out and not permit_record:
+                    print("buffer is allowed")
+                    detectbuffer()
+                    buffer_out = True
+
+                if buffer_in:
+                    if (int(delay.time() - frame_out) >= 3):
+                        print("buffer is greater than 3")
+                        buffer_out = False
+                        buffer_in = False
 
             if cv2.waitKey(25) & 0xFF == ord('q'):
-                istream = False
+                buffer_in = False
                 cv2.destroyAllWindows()
                 break
 
 # Background Notification
 notification.notify(
             title = "DETECTION REPORT",
-            message = str(count) + " Detections Made!",
+            message = str(count) + " Detection(s) Made!",
             app_icon = "avs_icon.ico",
             timeout= 20
             )
