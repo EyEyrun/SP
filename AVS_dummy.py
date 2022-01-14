@@ -348,7 +348,7 @@ def mailer(name, timestamp):
     msg.send(                                           # Mail to User SMS
         to = sms,
         subject = 'auth~pbmallapre@gmail.com~5A31B8F2-A22E-5138-CBC3-F97E63DBB989~ALERT~AVISU',
-        contents = "Intruder detected at " + stamp
+        contents = "Intruder detected on " + stamp
     )
     msg.send(                                           # Mail to User Address
         to = email,
